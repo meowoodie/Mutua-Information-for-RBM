@@ -1,1 +1,1 @@
-# Mutua-Information-for-RBM
+# Mutual-Information-for-RBM

@@ -87,10 +87,8 @@ def Train_RBM(train_set, rbm_type="sgd",
         name='train_rbm'
     )
 
-    plotting_time = 0.
     start_time = timeit.default_timer()
 
-    f = open("training_data.txt", "w")
     training_data = []
     # go through training epochs
     for epoch in xrange(training_epochs):
@@ -102,29 +100,11 @@ def Train_RBM(train_set, rbm_type="sgd",
 
         cur_time = str(arrow.utcnow())
         training_data.append((cur_time, epoch, numpy.mean(mean_cost)))
-        f.write("%s\t%s\t%s\n" % (cur_time, str(epoch), str(numpy.mean(mean_cost))))
         print '%s Training epoch %d, cost is %f' % (cur_time, epoch, numpy.mean(mean_cost))
-
-        # Plot filters after each training epoch
-        plotting_start = timeit.default_timer()
-        # Construct image from the weight matrix
-        image = Image.fromarray(
-            tile_raster_images(
-                X=rbm.W.get_value(borrow=True).T,
-                img_shape=(28, 28),
-                tile_shape=(10, 10),
-                tile_spacing=(1, 1)
-            )
-        )
-        image.save('filters_at_epoch_%i.png' % epoch)
-        plotting_stop = timeit.default_timer()
-        plotting_time += (plotting_stop - plotting_start)
-
-    f.close()
 
     end_time = timeit.default_timer()
 
-    pretraining_time = (end_time - start_time) - plotting_time
+    pretraining_time = end_time - start_time
 
     print ('Training took %f minutes' % (pretraining_time / 60.))
 

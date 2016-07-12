@@ -205,7 +205,7 @@ class RBM(object):
         return [pre_sigmoid_h1, h1_mean, h1_sample,
                 pre_sigmoid_v1, v1_mean, v1_sample]
 
-    def get_cost_updates(self, lr=0.1, hidden_sample_l=20, visible_sample_m=20):
+    def get_cost_updates(self, lr=0.1, hidden_sample_l=1, visible_sample_m=1):
         """This functions implements one step of CD-k or PCD-k
 
         :param lr: learning rate used to train the RBM
@@ -237,7 +237,15 @@ class RBM(object):
                 _, hl_mean, hl_sample = self.sample_h_given_v(v_input)
                 # Calculate the probability of visible output according to h_sample
                 _, vn_mean = self.propdown(hl_sample)
-                return T.log(vn_mean) * T.grad(T.log(hl_mean), self.params) + T.grad(T.log(vn_mean), self.params)
+                # return (T.log(vn_mean)).sum() * T.grad((T.log(hl_mean)).sum(), [self.W, self.hbias]) + \
+                #        T.grad((T.log(vn_mean)).sum(), [self.W, self.vbias])
+                return (T.log(vn_mean)).sum() * \
+                       [T.grad((T.log(hl_mean)).sum(), self.W),
+                        T.grad((T.log(hl_mean)).sum(), self.hbias),
+                        0] + \
+                       [T.grad((T.log(vn_mean)).sum(), self.W),
+                        numpy.zeros(T.log(vn_mean).sum().shape),
+                        0]
 
             # Calculate the gradient of R_n(\theta) for one v_input, including:
             # - For L times:
@@ -348,7 +356,7 @@ class RBM(object):
 
 
 def training(learning_rate=0.1, training_epochs=15,
-             dataset='mnist.pkl.gz', mini_batch_M=20, hidden_sample_L=10,
+             dataset='mnist.pkl.gz', mini_batch_M=10, hidden_sample_L=10,
              n_hidden=500):
     """
     Demonstrate how to train and afterwards sample from it using Theano.
@@ -362,6 +370,9 @@ def training(learning_rate=0.1, training_epochs=15,
     :param dataset: path the the pickled dataset
 
     :param mini_batch_M: size of a batch used to train the RBM
+
+    :param hidden_sample_L: the number of hidden samples which are sampled
+           according to one visible input.
     """
     datasets = load_data(dataset)
 
@@ -389,9 +400,7 @@ def training(learning_rate=0.1, training_epochs=15,
         visible_sample_m=mini_batch_M
     )
 
-    #################################
-    #     Training the RBM          #
-    #################################
+    # Training RBM
 
     # it is ok for a theano function to have no output
     # the purpose of train_rbm is solely to update the RBM parameters

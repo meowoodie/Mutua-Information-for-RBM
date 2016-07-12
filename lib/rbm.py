@@ -1,8 +1,13 @@
-"""This tutorial introduces restricted boltzmann machines (RBM) using Theano.
+"""Mutual Information for RBM
 
-Boltzmann Machines (BMs) are a particular form of energy-based model which
-contain hidden variables. Restricted Boltzmann Machines further restrict BMs
-to those without visible-visible and hidden-hidden connections.
+@Author: Woodie
+@Date: July 12, 2016
+@Description:
+ It's a brand new version of RBM, using another kind of optimization
+ method, named Stochastic Variational Training of Mutual Information.
+ We have mainly revamped the get_cost_updates function in order to
+ implement our new cost function.
+@Contact: meowoodie@outlook.com
 """
 import timeit
 
@@ -232,10 +237,10 @@ class RBM(object):
             # Annotation: L = hidden_sample_l
             def calculate_Rl(v_input):
                 # Sample a h_sample according to one v_input
-                _, h_mean, h_sample = self.sample_h_given_v(v_input)
+                _, hl_mean, hl_sample = self.sample_h_given_v(v_input)
                 # Calculate the probability of visible output according to h_sample
-                _, vn_mean = self.propdown(h_sample)
-                return T.log(vn_mean) * T.grad(T.log(h_mean), self.params) + T.grad(T.log(vn_mean), self.params)
+                _, vn_mean = self.propdown(hl_sample)
+                return T.log(vn_mean) * T.grad(T.log(hl_mean), self.params) + T.grad(T.log(vn_mean), self.params)
 
             # Calculate the gradient of R_n(\theta) for one v_input, including:
             # - For L times:

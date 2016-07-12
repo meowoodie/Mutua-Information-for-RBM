@@ -232,7 +232,7 @@ class RBM(object):
                 _, h_mean, h_sample = self.sample_h_given_v(v_input)
                 # Calculate the probability of visible output according to h_sample
                 _, vn_mean = self.propdown(h_sample)
-                return T.log(vn_mean) * T.grad(T.log(h_mean), self.params) + T.grad(T.log(vn_mean))
+                return T.log(vn_mean) * T.grad(T.log(h_mean), self.params) + T.grad(T.log(vn_mean), self.params)
 
             # Calculate the gradient of R_n(\theta) for one v_input, including:
             # - For L times:

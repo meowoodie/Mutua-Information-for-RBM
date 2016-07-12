@@ -27,8 +27,6 @@ from theano.tensor.shared_randomstreams import RandomStreams
 from utils import tile_raster_images
 from logistic_sgd import load_data
 
-
-# start-snippet-1
 class RBM(object):
     """Restricted Boltzmann Machine (RBM)  """
     def __init__(
@@ -207,7 +205,6 @@ class RBM(object):
         return [pre_sigmoid_h1, h1_mean, h1_sample,
                 pre_sigmoid_v1, v1_mean, v1_sample]
 
-    # start-snippet-2
     def get_cost_updates(self, lr=0.1, hidden_sample_l=20, visible_sample_m=20):
         """This functions implements one step of CD-k or PCD-k
 
@@ -350,9 +347,8 @@ class RBM(object):
         return cross_entropy
 
 
-def test_rbm(learning_rate=0.1, training_epochs=15,
+def training(learning_rate=0.1, training_epochs=15,
              dataset='mnist.pkl.gz', mini_batch_M=20, hidden_sample_L=10,
-             n_chains=20, n_samples=10, output_folder='rbm_plots',
              n_hidden=500):
     """
     Demonstrate how to train and afterwards sample from it using Theano.
@@ -366,16 +362,11 @@ def test_rbm(learning_rate=0.1, training_epochs=15,
     :param dataset: path the the pickled dataset
 
     :param mini_batch_M: size of a batch used to train the RBM
-
-    :param n_chains: number of parallel Gibbs chains to be used for sampling
-
-    :param n_samples: number of samples to plot for each chain
-
     """
     datasets = load_data(dataset)
 
     train_set_x, train_set_y = datasets[0]
-    test_set_x, test_set_y = datasets[2]
+    # test_set_x, test_set_y = datasets[2]
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / mini_batch_M
@@ -387,17 +378,11 @@ def test_rbm(learning_rate=0.1, training_epochs=15,
     rng = numpy.random.RandomState(123)
     theano_rng = RandomStreams(rng.randint(2 ** 30))
 
-    # initialize storage for the persistent chain (state = hidden
-    # layer of chain)
-    persistent_chain = theano.shared(numpy.zeros((mini_batch_M, n_hidden),
-                                                 dtype=theano.config.floatX),
-                                     borrow=True)
-
     # construct the RBM class
     rbm = RBM(input=x, n_visible=28 * 28,
               n_hidden=n_hidden, numpy_rng=rng, theano_rng=theano_rng)
 
-    # get the cost and the gradient corresponding to one step of CD-15
+    # get the cost and the gradient by using MI
     cost, updates = rbm.get_cost_updates(
         lr=learning_rate,
         hidden_sample_l=hidden_sample_L,
@@ -408,7 +393,6 @@ def test_rbm(learning_rate=0.1, training_epochs=15,
     #     Training the RBM          #
     #################################
 
-    # start-snippet-5
     # it is ok for a theano function to have no output
     # the purpose of train_rbm is solely to update the RBM parameters
     train_rbm = theano.function(
@@ -440,4 +424,4 @@ def test_rbm(learning_rate=0.1, training_epochs=15,
     print ('Training took %f minutes' % (pretraining_time / 60.))
 
 if __name__ == '__main__':
-    test_rbm()
+    training()

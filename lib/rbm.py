@@ -203,7 +203,7 @@ class RBM(object):
                 pre_sigmoid_v1, v1_mean, v1_sample]
 
     # start-snippet-2
-    def get_cost_updates(self, lr=0.1, hidden_sample_l=20):
+    def get_cost_updates(self, lr=0.1, hidden_sample_l=20, visible_sample_m=20):
         """This functions implements one step of CD-k or PCD-k
 
         :param lr: learning rate used to train the RBM
@@ -221,80 +221,56 @@ class RBM(object):
 
         """
 
+        # Calculate the gradient of R_n(\theta) for one v_input
+        def calculate_Rn(v_input):
 
+            # Calculate the gradient of R_l(\theta)
+            # Equation:   R_n(\theta) = (1/L) * sum_{l=1}^{L} {R_l(\theta)}
+            # Annotation: L = hidden_sample_l
+            def calculate_Rl(v_input):
+                # Sample a h_sample according to one v_input
+                _, h_mean, h_sample = self.sample_h_given_v(v_input)
+                # Calculate the probability of visible output according to h_sample
+                _, vn_mean = self.propdown(h_sample)
+                return T.log(vn_mean) * T.grad(T.log(h_mean), self.params) + T.grad(T.log(vn_mean))
 
-        def calculate_Rn(hl_mean, h_sample):
-            [sigmoid_vn, vn_mean, vn_sample] = self.sample_v_given_h(h_sample)
-            return T.log(vn_mean) * T.grad(T.log(hl_mean), self.params) + T.grad(T.log(vn_mean))
+            # Calculate the gradient of R_n(\theta) for one v_input, including:
+            # - For L times:
+            # - 1. Sample a h_sample with respect to current v_input
+            # - 2. Calculate the gradient of R_l(\theta) with respect to current h_sample
+            (Rls, updates) = theano.scan(
+                calculate_Rl,
+                outputs_info=None,
+                non_sequences=v_input,
+                n_steps=hidden_sample_l
+            )
+            # - 3. Sum all R_l(\theta)
+            Rn = Rls.sum() / hidden_sample_l
 
-        # Obtain the hidden output by running once sampling according to conditional probability.
-        sigmoid_hls, hl_means, hl_samples = self.sample_h_given_v(self.input)
+            return Rn
 
-        Rns = theano.scan(
-            calculate_
-            outputs_info=None,
-            sequences=[hl_means, hl_samples]
-        )
-
-
+        # Calculate the gradient of R_n(\theta) for each v_input
+        # Annotation: self.input are a mini-batch of visible inputs which are sampled randomly from training dataset.
         (Rns, updates) = theano.scan(
             calculate_Rn,
             outputs_info=None,
-            sequences=[hl_mean, hl_sample],
-            non_sequences=hl_mean,
-            n_steps=hidden_sample_l
+            sequences=[self.input]
         )
-        R = Rns.sum()
+        # Get the gradient by summing all R_n(\theta)
+        gparams = Rns.sum() / visible_sample_m
 
+        # Using SGD to constructs the update dictionary
+        for gparam, param in zip(gparams, self.params):
+            # make sure that the learning rate is of the right dtype
+            updates[param] = param - gparam * T.cast(
+                lr,
+                dtype=theano.config.floatX
+            )
 
-        # if persistent is None:
-        #     chain_start = ph_sample
-        # else:
-        #     chain_start = persistent
-        #
-        # (
-        #     [
-        #         pre_sigmoid_nvs,
-        #         nv_means,
-        #         nv_samples,
-        #         pre_sigmoid_nhs,
-        #         nh_means,
-        #         nh_samples
-        #     ],
-        #     updates
-        # ) = theano.scan(
-        #     self.gibbs_hvh,
-        #     # the None are place holders, saying that
-        #     # chain_start is the initial state corresponding to the
-        #     # 6th output
-        #     outputs_info=[None, None, None, None, None, chain_start],
-        #     n_steps=k
-        # )
-        # chain_end = nv_samples[-1]
+        # TODO: need add a new function in order to change monitoring_cost to the real cost
+        monitoring_cost = self.get_pseudo_likelihood_cost(updates)
 
-        # cost = T.mean(self.free_energy(self.input)) - T.mean(
-        #     self.free_energy(chain_end))
-        # # We must not compute the gradient through the gibbs sampling
-        # gparams = T.grad(cost, self.params, consider_constant=[chain_end])
-        # # end-snippet-3 start-snippet-4
-        # # constructs the update dictionary
-        # for gparam, param in zip(gparams, self.params):
-        #     # make sure that the learning rate is of the right dtype
-        #     updates[param] = param - gparam * T.cast(
-        #         lr,
-        #         dtype=theano.config.floatX
-        #     )
-        # if persistent:
-        #     # Note that this works only if persistent is a shared variable
-        #     updates[persistent] = nh_samples[-1]
-        #     # pseudo-likelihood is a better proxy for PCD
-        #     monitoring_cost = self.get_pseudo_likelihood_cost(updates)
-        # else:
-        #     # reconstruction cross-entropy is a better proxy for CD
-        #     monitoring_cost = self.get_reconstruction_cost(updates,
-        #                                                    pre_sigmoid_nvs[-1])
-
-        # return monitoring_cost, updates
+        return monitoring_cost, updates
 
     def get_pseudo_likelihood_cost(self, updates):
         """Stochastic approximation to the pseudo-likelihood"""
@@ -414,7 +390,11 @@ def test_rbm(learning_rate=0.1, training_epochs=15,
               n_hidden=n_hidden, numpy_rng=rng, theano_rng=theano_rng)
 
     # get the cost and the gradient corresponding to one step of CD-15
-    cost, updates = rbm.get_cost_updates(lr=learning_rate, hidden_sample_l=hidden_sample_L)
+    cost, updates = rbm.get_cost_updates(
+        lr=learning_rate,
+        hidden_sample_l=hidden_sample_L,
+        visible_sample_m=mini_batch_M
+    )
 
     #################################
     #     Training the RBM          #

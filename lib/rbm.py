@@ -208,17 +208,20 @@ class RBM(object):
 
         :param lr: learning rate used to train the RBM
 
-        :param persistent: None for CD. For PCD, shared variable
-            containing old state of Gibbs chain. This must be a shared
-            variable of size (batch size, number of hidden units).
+        :param hidden_sample_l (L): the number of hidden samples which are sampled
+               according to one visible input.
 
-        :param k: number of Gibbs steps to do in CD-k/PCD-k
+        :param visible_sample_m (M): the number of visible input which are sampled
+               from the training dataset, i.e. the size of
+               mini-batch.
 
-        Returns a proxy for the cost and the updates dictionary. The
-        dictionary contains the update rules for weights and biases but
-        also an update of the shared variable used to store the persistent
-        chain, if one is used.
+        The gradient of cost (R) is formulated as:
 
+        grad(R)   = (1 / M) * sum_{n=1}^{M} {grad(R_n)}
+        grad(R_n) = (1 / L) * sum_{l=1}^{L} {
+                    log(p(v^n|h^l;\theta)) * grad(log(p(h^l|v^n;\theta))) +
+                    grad(log(p(v^n|h^l;\theta)))
+                    }
         """
 
         # Calculate the gradient of R_n(\theta) for one v_input

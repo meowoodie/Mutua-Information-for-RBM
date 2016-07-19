@@ -237,16 +237,23 @@ class RBM(object):
                 _, hl_mean, hl_sample = self.sample_h_given_v(v_input)
                 # Calculate the probability of visible output according to h_sample
                 _, vn_mean = self.propdown(hl_sample)
-                #
+                # - Part1.
+                #   Desc: Multiply each element in grad with T.log(vn_mean).sum()
+                #   Hint: [array(...), array(...), array(...)] = T.grad(..., self.params)
+                #         The number of elements in gradient is the number of params which are partial derivation.
                 part1 = map(lambda x: x * T.log(vn_mean).sum(),
                             T.grad(T.log(hl_mean).sum(),
                                    self.params,
                                    disconnected_inputs='warn'))
+                # - Part2.
                 part2 = T.grad((T.log(vn_mean).sum()),
                                 self.params,
                                 consider_constant=[vn_mean],
                                 disconnected_inputs='warn')
-                return map(lambda p1, p2: p1 + p2, part1, part2)
+                # Rl is the result that add corresponding elements in two gradient.
+                # Rl = log(p(v^n|h^l;\theta)) * grad(log(p(h^l|v^n;\theta))) + grad(log(p(v^n|h^l;\theta)))
+                Rl = map(lambda p1, p2: p1 + p2, part1, part2)
+                return Rl
 
             # Calculate the gradient of R_n(\theta) for one v_input, including:
             # - For L times:
@@ -259,7 +266,17 @@ class RBM(object):
                 n_steps=hidden_sample_l
             )
             # - 3. Sum all R_l(\theta)
-            Rn = map(lambda x: x.sum() / hidden_sample_l, Rls)
+            #      Hint: the result of scan likes:
+            #            [array([[...],
+            #                    [...],
+            #                     ... ,
+            #                    [...]]),
+            #             array(... ...),
+            #             array(... ...)]
+            #             One array(...) represent the result of a partial derivative params.
+            # TODO: x.sum() sums all the elements in the matrix. If do we need to calculate the total sum?
+            # TODO: or just the sum of corresponding elements in different array(...)?
+            Rn = map(lambda x: x.sum(0) / hidden_sample_l, Rls)
             return Rn
 
         # Calculate the gradient of R_n(\theta) for each v_input
@@ -270,9 +287,12 @@ class RBM(object):
             sequences=[self.input]
         )
         # Get the gradient by summing all R_n(\theta)
-        gparams = map(lambda x: x.sum() / visible_sample_m, Rns)
+        # TODO: If do we need to calculate the total sum of the elements in the matrix? (.sum())
+        # TODO: or just the sum of corresponding elements in different array(...)? (.sum(0))
+        R = map(lambda x: x.sum(0) / visible_sample_m, Rns)
 
         # Using SGD to constructs the update dictionary
+        gparams = R
         for gparam, param in zip(gparams, self.params):
             # make sure that the learning rate is of the right dtype
             updates[param] = param - gparam * T.cast(
@@ -376,8 +396,7 @@ def training(learning_rate=0.1, training_epochs=15,
     """
     datasets = load_data(dataset)
 
-    train_set_x, train_set_y = datasets[0]
-    # test_set_x, test_set_y = datasets[2]
+    train_set_x, _ = datasets[0][0:100]
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / mini_batch_M

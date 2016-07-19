@@ -236,10 +236,17 @@ class RBM(object):
                 # Sample a h_sample according to one v_input
                 _, hl_mean, hl_sample = self.sample_h_given_v(v_input)
                 # Calculate the probability of visible output according to h_sample
-                # _, vn_mean = self.propdown(hl_sample)
-                return T.grad((T.log(hl_mean)).sum(), self.params, disconnected_inputs='warn')\
-                       * (T.log(self.propdown(hl_sample)[1])).sum()\
-                       + T.grad((T.log(self.propdown(hl_sample)[1])).sum(), self.params, consider_constant=hl_sample, disconnected_inputs='warn')
+                _, vn_mean = self.propdown(hl_sample)
+                #
+                part1 = map(lambda x: x * T.log(vn_mean).sum(),
+                            T.grad(T.log(hl_mean).sum(),
+                                   self.params,
+                                   disconnected_inputs='warn'))
+                part2 = T.grad((T.log(vn_mean).sum()),
+                                self.params,
+                                consider_constant=[vn_mean],
+                                disconnected_inputs='warn')
+                return map(lambda p1, p2: p1 + p2, part1, part2)
 
             # Calculate the gradient of R_n(\theta) for one v_input, including:
             # - For L times:
@@ -252,8 +259,7 @@ class RBM(object):
                 n_steps=hidden_sample_l
             )
             # - 3. Sum all R_l(\theta)
-            Rn = Rls.sum() / hidden_sample_l
-
+            Rn = map(lambda x: x.sum() / hidden_sample_l, Rls)
             return Rn
 
         # Calculate the gradient of R_n(\theta) for each v_input
@@ -264,7 +270,7 @@ class RBM(object):
             sequences=[self.input]
         )
         # Get the gradient by summing all R_n(\theta)
-        gparams = Rns.sum() / visible_sample_m
+        gparams = map(lambda x: x.sum() / visible_sample_m, Rns)
 
         # Using SGD to constructs the update dictionary
         for gparam, param in zip(gparams, self.params):

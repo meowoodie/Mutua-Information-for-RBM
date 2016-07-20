@@ -9,7 +9,6 @@
  implement our new cost function.
 @Contact: meowoodie@outlook.com
 """
-import timeit
 import arrow
 
 try:
@@ -20,11 +19,8 @@ except ImportError:
 import numpy
 import theano
 import theano.tensor as T
-import os
 
 from theano.tensor.shared_randomstreams import RandomStreams
-
-from utils import tile_raster_images
 from logistic_sgd import load_data
 
 class RBM(object):
@@ -246,8 +242,11 @@ class RBM(object):
                 #             T.grad(T.log(hl_mean).sum(),
                 #                    self.params,
                 #                    disconnected_inputs='warn'))
-                part1 = [x * T.log(vn_mean).sum() for x in T.grad(T.log(hl_mean).sum(), self.params, disconnected_inputs='warn')]
-                                   
+                part1 = [x * T.log(vn_mean).sum() for x in T.grad(
+                    T.log(hl_mean).sum(),
+                    self.params,
+                    disconnected_inputs='warn')]
+
                 # - Part2.
                 part2 = T.grad((T.log(vn_mean).sum()),
                                 self.params,
@@ -279,8 +278,8 @@ class RBM(object):
             #             array(... ...),
             #             array(... ...)]
             #             One array(...) represent the result of a partial derivative params.
-            # TODO: x.sum() sums all the elements in the matrix. If do we need to calculate the total sum?
-            # TODO: or just the sum of corresponding elements in different array(...)?
+            # TODO: If do we need to calculate the total sum of the elements in the matrix? (.sum())
+            # TODO: or just the sum of corresponding elements in different array(...)? (.sum(0))
             
             # Rn = map(lambda x: x.sum(0) / hidden_sample_l, Rls)
             Rn = [x.sum(0) / hidden_sample_l for x in Rls]
@@ -441,9 +440,9 @@ def training(learning_rate=0.1, training_epochs=100,
         name='train_rbm'
     )
 
-    start_time = timeit.default_timer()
+    start_time = arrow.now()
     
-    print "[%s] Start training." % arrow.now()
+    print "[%s] Start training." % start_time
     # go through training epochs
     for epoch in xrange(training_epochs):
 
@@ -454,11 +453,11 @@ def training(learning_rate=0.1, training_epochs=100,
 
         print '[%s] Training epoch %d, cost is %f' % (arrow.now(), epoch, numpy.mean(mean_cost))
 
-    end_time = timeit.default_timer()
+    end_time = arrow.now()
 
     pretraining_time = end_time - start_time
 
-    print ('Training took %f minutes' % (pretraining_time / 60.))
+    print "Training took %s" % pretraining_time
 
 if __name__ == '__main__':
     training()

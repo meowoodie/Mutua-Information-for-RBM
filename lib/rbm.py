@@ -303,7 +303,7 @@ class RBM(object):
         gparams = R
         for gparam, param in zip(gparams, self.params):
             # make sure that the learning rate is of the right dtype
-            updates[param] = param - gparam * T.cast(
+            updates[param] = param + gparam * T.cast(
                 lr,
                 dtype=theano.config.floatX
             )
@@ -383,7 +383,7 @@ class RBM(object):
         return cross_entropy
 
 
-def training(learning_rate=0.1, training_epochs=15,
+def training(learning_rate=0.1, training_epochs=100,
              dataset='mnist.pkl.gz', mini_batch_M=10, hidden_sample_L=1,
              n_hidden=2):
     """

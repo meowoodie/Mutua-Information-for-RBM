@@ -384,7 +384,7 @@ class RBM(object):
 
 
 def training(learning_rate=0.1, training_epochs=100,
-             dataset='mnist.pkl.gz', mini_batch_M=10, hidden_sample_L=2,
+             dataset='mnist.pkl.gz', mini_batch_M=10, hidden_sample_L=10,
              n_hidden=50):
     """
     Demonstrate how to train and afterwards sample from it using Theano.
@@ -443,7 +443,7 @@ def training(learning_rate=0.1, training_epochs=100,
 
     start_time = timeit.default_timer()
     
-    print arrow.now()
+    print "[%s] Start training." % arrow.now()
     # go through training epochs
     for epoch in xrange(training_epochs):
 

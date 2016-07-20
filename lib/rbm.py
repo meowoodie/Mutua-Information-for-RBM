@@ -10,6 +10,7 @@
 @Contact: meowoodie@outlook.com
 """
 import timeit
+import arrow
 
 try:
     import PIL.Image as Image
@@ -17,7 +18,6 @@ except ImportError:
     import Image
 
 import numpy
-
 import theano
 import theano.tensor as T
 import os
@@ -241,10 +241,13 @@ class RBM(object):
                 #   Desc: Multiply each element in grad with T.log(vn_mean).sum()
                 #   Hint: [array(...), array(...), array(...)] = T.grad(..., self.params)
                 #         The number of elements in gradient is the number of params which are partial derivation.
-                part1 = map(lambda x: x * T.log(vn_mean).sum(),
-                            T.grad(T.log(hl_mean).sum(),
-                                   self.params,
-                                   disconnected_inputs='warn'))
+                
+                # part1 = map(lambda x: x * T.log(vn_mean).sum(),
+                #             T.grad(T.log(hl_mean).sum(),
+                #                    self.params,
+                #                    disconnected_inputs='warn'))
+                part1 = [x * T.log(vn_mean).sum() for x in T.grad(T.log(hl_mean).sum(), self.params, disconnected_inputs='warn')]
+                                   
                 # - Part2.
                 part2 = T.grad((T.log(vn_mean).sum()),
                                 self.params,
@@ -252,7 +255,9 @@ class RBM(object):
                                 disconnected_inputs='warn')
                 # Rl is the result that add corresponding elements in two gradient.
                 # Rl = log(p(v^n|h^l;\theta)) * grad(log(p(h^l|v^n;\theta))) + grad(log(p(v^n|h^l;\theta)))
-                Rl = map(lambda p1, p2: p1 + p2, part1, part2)
+                
+                # Rl = map(lambda p1, p2: p1 + p2, part1, part2)
+                Rl = [x + y for x, y in zip(part1, part2)]
                 return Rl
 
             # Calculate the gradient of R_n(\theta) for one v_input, including:
@@ -276,7 +281,9 @@ class RBM(object):
             #             One array(...) represent the result of a partial derivative params.
             # TODO: x.sum() sums all the elements in the matrix. If do we need to calculate the total sum?
             # TODO: or just the sum of corresponding elements in different array(...)?
-            Rn = map(lambda x: x.sum(0) / hidden_sample_l, Rls)
+            
+            # Rn = map(lambda x: x.sum(0) / hidden_sample_l, Rls)
+            Rn = [x.sum(0) / hidden_sample_l for x in Rls]
             return Rn
 
         # Calculate the gradient of R_n(\theta) for each v_input
@@ -289,8 +296,9 @@ class RBM(object):
         # Get the gradient by summing all R_n(\theta)
         # TODO: If do we need to calculate the total sum of the elements in the matrix? (.sum())
         # TODO: or just the sum of corresponding elements in different array(...)? (.sum(0))
-        R = map(lambda x: x.sum(0) / visible_sample_m, Rns)
-
+        
+        # R = map(lambda x: x.sum(0) / visible_sample_m, Rns)
+        R = [x.sum(0) / visible_sample_m for x in Rns]
         # Using SGD to constructs the update dictionary
         gparams = R
         for gparam, param in zip(gparams, self.params):
@@ -376,8 +384,8 @@ class RBM(object):
 
 
 def training(learning_rate=0.1, training_epochs=15,
-             dataset='mnist.pkl.gz', mini_batch_M=10, hidden_sample_L=10,
-             n_hidden=500):
+             dataset='mnist.pkl.gz', mini_batch_M=10, hidden_sample_L=1,
+             n_hidden=2):
     """
     Demonstrate how to train and afterwards sample from it using Theano.
 
@@ -396,7 +404,7 @@ def training(learning_rate=0.1, training_epochs=15,
     """
     datasets = load_data(dataset)
 
-    train_set_x, _ = datasets[0][0:100]
+    train_set_x, _ = datasets[0][0:50]
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / mini_batch_M
@@ -434,7 +442,8 @@ def training(learning_rate=0.1, training_epochs=15,
     )
 
     start_time = timeit.default_timer()
-
+    
+    print arrow.now()
     # go through training epochs
     for epoch in xrange(training_epochs):
 
@@ -443,7 +452,7 @@ def training(learning_rate=0.1, training_epochs=15,
         for batch_index in xrange(n_train_batches):
             mean_cost += [train_rbm(batch_index)]
 
-        print 'Training epoch %d, cost is ' % epoch, numpy.mean(mean_cost)
+        print '[%s] Training epoch %d, cost is %f' % (arrow.now(), epoch, numpy.mean(mean_cost))
 
     end_time = timeit.default_timer()
 

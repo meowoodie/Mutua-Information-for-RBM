@@ -385,7 +385,7 @@ class RBM(object):
 
 def training(learning_rate=0.1, training_epochs=100,
              dataset='mnist.pkl.gz', mini_batch_M=10, hidden_sample_L=1,
-             n_hidden=2):
+             n_hidden=5):
     """
     Demonstrate how to train and afterwards sample from it using Theano.
 
@@ -404,7 +404,7 @@ def training(learning_rate=0.1, training_epochs=100,
     """
     datasets = load_data(dataset)
 
-    train_set_x, _ = datasets[0][0:50]
+    train_set_x, _ = datasets[0][0:1000]
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / mini_batch_M

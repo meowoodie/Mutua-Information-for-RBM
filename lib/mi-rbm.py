@@ -203,7 +203,11 @@ class RBM(object):
         return [pre_sigmoid_h1, h1_mean, h1_sample,
                 pre_sigmoid_v1, v1_mean, v1_sample]
 
-    def get_cost_updates(self, lr=0.1, hidden_sample_l=1, visible_sample_m=1):
+    def get_cost_updates(self, lr=0.1,
+                         persistent=None, k=1,
+                         hidden_sample_l=1,
+                         visible_sample_m=1,
+                         k1=0.9, k2=0.1):
         """This functions implements one step of CD-k or PCD-k
 
         :param lr: learning rate used to train the RBM
@@ -223,6 +227,9 @@ class RBM(object):
                     grad(log(p(v^n|h^l;\theta)))
                     }
         """
+        ##########################################
+        # * Snippet-1: Multual Information Cost *
+        ##########################################
 
         # Calculate the gradient of R_n(\theta) for one v_input
         def calculate_Rn(v_input):
@@ -280,9 +287,8 @@ class RBM(object):
             #             array(... ...),
             #             array(... ...)]
             #             One array(...) represent the result of a partial derivative params.
-            # TODO: If do we need to calculate the total sum of the elements in the matrix? (.sum())
-            # TODO: or just the sum of corresponding elements in different array(...)? (.sum(0))
-            
+            # Warning: If do we need to calculate the total sum of the elements in the matrix? (.sum())
+            #          or just the sum of corresponding elements in different array(...)? (.sum(0))
             # Rn = map(lambda x: x.sum(0) / hidden_sample_l, Rls)
             Rn = [x.sum(0) / hidden_sample_l for x in Rls]
             return Rn
@@ -295,16 +301,70 @@ class RBM(object):
             sequences=[self.input]
         )
         # Get the gradient by summing all R_n(\theta)
-        # TODO: If do we need to calculate the total sum of the elements in the matrix? (.sum())
-        # TODO: or just the sum of corresponding elements in different array(...)? (.sum(0))
-        
+        # Warning: If do we need to calculate the total sum of the elements in the matrix? (.sum())
+        #          or just the sum of corresponding elements in different array(...)? (.sum(0))
         # R = map(lambda x: x.sum(0) / visible_sample_m, Rns)
         R = [x.sum(0) / visible_sample_m for x in Rns]
+
+        ##########################################
+        # * Snippet-2:     Free Energy Cost     *
+        ##########################################
+
+        # compute positive phase
+        pre_sigmoid_ph, ph_mean, ph_sample = self.sample_h_given_v(self.input)
+
+        # decide how to initialize persistent chain:
+        # for CD, we use the newly generate hidden sample
+        # for PCD, we initialize from the old state of the chain
+        if persistent is None:
+            chain_start = ph_sample
+        else:
+            chain_start = persistent
+        # end-snippet-2
+        # perform actual negative phase
+        # in order to implement CD-k/PCD-k we need to scan over the
+        # function that implements one gibbs step k times.
+        # Read Theano tutorial on scan for more information :
+        # http://deeplearning.net/software/theano/library/scan.html
+        # the scan will return the entire Gibbs chain
+        (
+            [
+                pre_sigmoid_nvs,
+                nv_means,
+                nv_samples,
+                pre_sigmoid_nhs,
+                nh_means,
+                nh_samples
+            ],
+            updates
+        ) = theano.scan(
+            self.gibbs_hvh,
+            # the None are place holders, saying that
+            # chain_start is the initial state corresponding to the
+            # 6th output
+            outputs_info=[None, None, None, None, None, chain_start],
+            n_steps=k
+        )
+        # start-snippet-3
+        # determine gradients on RBM parameters
+        # note that we only need the sample at the end of the chain
+        chain_end = nv_samples[-1]
+
+        cost = T.mean(self.free_energy(self.input)) - T.mean(
+            self.free_energy(chain_end))
+
+        gradient = T.grad(cost, self.params, consider_constant=[chain_end])
+
+        ##########################################
+        # * Snippet-3:     Final Cost     *
+        ##########################################
+
+        gparams = [k1 * x - k2 * y for x, y in zip(gradient, R)]
+
         # Using SGD to constructs the update dictionary
-        gparams = R
         for gparam, param in zip(gparams, self.params):
             # make sure that the learning rate is of the right dtype
-            updates[param] = param + gparam * T.cast(
+            updates[param] = param - gparam * T.cast(
                 lr,
                 dtype=theano.config.floatX
             )
@@ -411,6 +471,12 @@ def training(train_set, learning_rate=0.1, training_epochs=50,
     rng = numpy.random.RandomState(123)
     theano_rng = RandomStreams(rng.randint(2 ** 30))
 
+    # initialize storage for the persistent chain (state = hidden
+    # layer of chain)
+    persistent_chain = theano.shared(numpy.zeros((mini_batch_M, n_hidden),
+                                                 dtype=theano.config.floatX),
+                                     borrow=True)
+
     # construct the RBM class
     rbm = RBM(input=x, n_visible=28 * 28,
               n_hidden=n_hidden, numpy_rng=rng, theano_rng=theano_rng)
@@ -418,6 +484,8 @@ def training(train_set, learning_rate=0.1, training_epochs=50,
     # get the cost and the gradient by using MI
     cost, updates = rbm.get_cost_updates(
         lr=learning_rate,
+        persistent=persistent_chain,
+        k=15,
         hidden_sample_l=hidden_sample_L,
         visible_sample_m=mini_batch_M
     )

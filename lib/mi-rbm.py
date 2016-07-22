@@ -20,6 +20,7 @@ except ImportError:
 import numpy
 import theano
 import theano.tensor as T
+theano.config.exception_verbosity='high'
 
 from theano.tensor.shared_randomstreams import RandomStreams
 from logistic_sgd import load_data
@@ -230,136 +231,144 @@ class RBM(object):
         ##########################################
         # * Snippet-1: Multual Information Cost *
         ##########################################
+        def R(input):
+            # Calculate the gradient of R_n(\theta) for one v_input
+            def calculate_Rn(v_input):
 
-        # Calculate the gradient of R_n(\theta) for one v_input
-        def calculate_Rn(v_input):
+                # Calculate the gradient of R_l(\theta)
+                # Equation:   R_n(\theta) = (1/L) * sum_{l=1}^{L} {R_l(\theta)}
+                # Annotation: L = hidden_sample_l
+                def calculate_Rl(v_input):
+                    # Sample a h_sample according to one v_input
+                    _, hl_mean, hl_sample = self.sample_h_given_v(v_input)
+                    # Calculate the probability of visible output according to h_sample
+                    _, vn_mean = self.propdown(hl_sample)
+                    # - Part1.
+                    #   Desc: Multiply each element in grad with T.log(vn_mean).sum()
+                    #   Hint: [array(...), array(...), array(...)] = T.grad(..., self.params)
+                    #         The number of elements in gradient is the number of params which are partial derivation.
 
-            # Calculate the gradient of R_l(\theta)
-            # Equation:   R_n(\theta) = (1/L) * sum_{l=1}^{L} {R_l(\theta)}
-            # Annotation: L = hidden_sample_l
-            def calculate_Rl(v_input):
-                # Sample a h_sample according to one v_input
-                _, hl_mean, hl_sample = self.sample_h_given_v(v_input)
-                # Calculate the probability of visible output according to h_sample
-                _, vn_mean = self.propdown(hl_sample)
-                # - Part1.
-                #   Desc: Multiply each element in grad with T.log(vn_mean).sum()
-                #   Hint: [array(...), array(...), array(...)] = T.grad(..., self.params)
-                #         The number of elements in gradient is the number of params which are partial derivation.
-                
-                # part1 = map(lambda x: x * T.log(vn_mean).sum(),
-                #             T.grad(T.log(hl_mean).sum(),
-                #                    self.params,
-                #                    disconnected_inputs='warn'))
-                part1 = [x * T.log(vn_mean).sum() for x in T.grad(
-                    T.log(hl_mean).sum(),
-                    self.params,
-                    disconnected_inputs='warn')]
+                    # part1 = map(lambda x: x * T.log(vn_mean).sum(),
+                    #             T.grad(T.log(hl_mean).sum(),
+                    #                    self.params,
+                    #                    disconnected_inputs='warn'))
+                    part1 = [x * T.log(vn_mean).sum() for x in T.grad(
+                        T.log(hl_mean).sum(),
+                        self.params,
+                        disconnected_inputs='warn')]
 
-                # - Part2.
-                part2 = T.grad((T.log(vn_mean).sum()),
-                                self.params,
-                                consider_constant=[vn_mean],
-                                disconnected_inputs='warn')
-                # Rl is the result that add corresponding elements in two gradient.
-                # Rl = log(p(v^n|h^l;\theta)) * grad(log(p(h^l|v^n;\theta))) + grad(log(p(v^n|h^l;\theta)))
-                
-                # Rl = map(lambda p1, p2: p1 + p2, part1, part2)
-                Rl = [x + y for x, y in zip(part1, part2)]
-                return Rl
+                    # - Part2.
+                    part2 = T.grad((T.log(vn_mean).sum()),
+                                    self.params,
+                                    consider_constant=[vn_mean],
+                                    disconnected_inputs='warn')
+                    # Rl is the result that add corresponding elements in two gradient.
+                    # Rl = log(p(v^n|h^l;\theta)) * grad(log(p(h^l|v^n;\theta))) + grad(log(p(v^n|h^l;\theta)))
 
-            # Calculate the gradient of R_n(\theta) for one v_input, including:
-            # - For L times:
-            # - 1. Sample a h_sample with respect to current v_input
-            # - 2. Calculate the gradient of R_l(\theta) with respect to current h_sample
-            (Rls, updates) = theano.scan(
-                calculate_Rl,
+                    # Rl = map(lambda p1, p2: p1 + p2, part1, part2)
+                    Rl = [x + y for x, y in zip(part1, part2)]
+                    return Rl
+
+                # Calculate the gradient of R_n(\theta) for one v_input, including:
+                # - For L times:
+                # - 1. Sample a h_sample with respect to current v_input
+                # - 2. Calculate the gradient of R_l(\theta) with respect to current h_sample
+                (Rls, updates) = theano.scan(
+                    calculate_Rl,
+                    outputs_info=None,
+                    non_sequences=v_input,
+                    n_steps=hidden_sample_l
+                )
+                # - 3. Sum all R_l(\theta)
+                #      Hint: the result of scan likes:
+                #            [array([[...],
+                #                    [...],
+                #                     ... ,
+                #                    [...]]),
+                #             array(... ...),
+                #             array(... ...)]
+                #             One array(...) represent the result of a partial derivative params.
+                # Warning: If do we need to calculate the total sum of the elements in the matrix? (.sum())
+                #          or just the sum of corresponding elements in different array(...)? (.sum(0))
+                # Rn = map(lambda x: x.sum(0) / hidden_sample_l, Rls)
+                Rn = [x.sum(0) / hidden_sample_l for x in Rls]
+                return Rn
+
+            # Calculate the gradient of R_n(\theta) for each v_input
+            # Annotation: self.input are a mini-batch of visible inputs which are sampled randomly from training dataset.
+            (Rns, updates) = theano.scan(
+                calculate_Rn,
                 outputs_info=None,
-                non_sequences=v_input,
-                n_steps=hidden_sample_l
+                sequences=[input]
             )
-            # - 3. Sum all R_l(\theta)
-            #      Hint: the result of scan likes:
-            #            [array([[...],
-            #                    [...],
-            #                     ... ,
-            #                    [...]]),
-            #             array(... ...),
-            #             array(... ...)]
-            #             One array(...) represent the result of a partial derivative params.
+            # Get the gradient by summing all R_n(\theta)
             # Warning: If do we need to calculate the total sum of the elements in the matrix? (.sum())
             #          or just the sum of corresponding elements in different array(...)? (.sum(0))
-            # Rn = map(lambda x: x.sum(0) / hidden_sample_l, Rls)
-            Rn = [x.sum(0) / hidden_sample_l for x in Rls]
-            return Rn
+            # R = map(lambda x: x.sum(0) / visible_sample_m, Rns)
+            R = [x.sum(0) / visible_sample_m for x in Rns]
 
-        # Calculate the gradient of R_n(\theta) for each v_input
-        # Annotation: self.input are a mini-batch of visible inputs which are sampled randomly from training dataset.
-        (Rns, updates) = theano.scan(
-            calculate_Rn,
-            outputs_info=None,
-            sequences=[self.input]
-        )
-        # Get the gradient by summing all R_n(\theta)
-        # Warning: If do we need to calculate the total sum of the elements in the matrix? (.sum())
-        #          or just the sum of corresponding elements in different array(...)? (.sum(0))
-        # R = map(lambda x: x.sum(0) / visible_sample_m, Rns)
-        R = [x.sum(0) / visible_sample_m for x in Rns]
+            return R, updates
 
         ##########################################
         # * Snippet-2:     Free Energy Cost     *
         ##########################################
+        def G(input):
+            # compute positive phase
+            pre_sigmoid_ph, ph_mean, ph_sample = self.sample_h_given_v(input)
 
-        # compute positive phase
-        pre_sigmoid_ph, ph_mean, ph_sample = self.sample_h_given_v(self.input)
+            # decide how to initialize persistent chain:
+            # for CD, we use the newly generate hidden sample
+            # for PCD, we initialize from the old state of the chain
+            if persistent is None:
+                chain_start = ph_sample
+            else:
+                chain_start = persistent
+            # end-snippet-2
+            # perform actual negative phase
+            # in order to implement CD-k/PCD-k we need to scan over the
+            # function that implements one gibbs step k times.
+            # Read Theano tutorial on scan for more information :
+            # http://deeplearning.net/software/theano/library/scan.html
+            # the scan will return the entire Gibbs chain
+            (
+                [
+                    pre_sigmoid_nvs,
+                    nv_means,
+                    nv_samples,
+                    pre_sigmoid_nhs,
+                    nh_means,
+                    nh_samples
+                ],
+                updates_R
+            ) = theano.scan(
+                self.gibbs_hvh,
+                # the None are place holders, saying that
+                # chain_start is the initial state corresponding to the
+                # 6th output
+                outputs_info=[None, None, None, None, None, chain_start],
+                n_steps=k
+            )
+            # start-snippet-3
+            # determine gradients on RBM parameters
+            # note that we only need the sample at the end of the chain
+            chain_end = nv_samples[-1]
 
-        # decide how to initialize persistent chain:
-        # for CD, we use the newly generate hidden sample
-        # for PCD, we initialize from the old state of the chain
-        if persistent is None:
-            chain_start = ph_sample
-        else:
-            chain_start = persistent
-        # end-snippet-2
-        # perform actual negative phase
-        # in order to implement CD-k/PCD-k we need to scan over the
-        # function that implements one gibbs step k times.
-        # Read Theano tutorial on scan for more information :
-        # http://deeplearning.net/software/theano/library/scan.html
-        # the scan will return the entire Gibbs chain
-        (
-            [
-                pre_sigmoid_nvs,
-                nv_means,
-                nv_samples,
-                pre_sigmoid_nhs,
-                nh_means,
-                nh_samples
-            ],
-            updates
-        ) = theano.scan(
-            self.gibbs_hvh,
-            # the None are place holders, saying that
-            # chain_start is the initial state corresponding to the
-            # 6th output
-            outputs_info=[None, None, None, None, None, chain_start],
-            n_steps=k
-        )
-        # start-snippet-3
-        # determine gradients on RBM parameters
-        # note that we only need the sample at the end of the chain
-        chain_end = nv_samples[-1]
+            cost = T.mean(self.free_energy(input)) - T.mean(
+                self.free_energy(chain_end))
 
-        cost = T.mean(self.free_energy(self.input)) - T.mean(
-            self.free_energy(chain_end))
+            G = T.grad(cost, self.params, consider_constant=[chain_end])
 
-        gradient = T.grad(cost, self.params, consider_constant=[chain_end])
+            return G, updates_R
 
         ##########################################
         # * Snippet-3:     Final Cost     *
         ##########################################
 
-        gparams = [k1 * x - k2 * y for x, y in zip(gradient, R)]
+        g_R, updates_R = R(self.input)
+        g_G, updates = G(self.input)
+        updates.update(updates_R)
+
+        gparams = [k1 * x - k2 * y for x, y in zip(g_G, g_R)]
 
         # Using SGD to constructs the update dictionary
         for gparam, param in zip(gparams, self.params):
@@ -607,10 +616,10 @@ def generating(rbm, test_set, n_chains=20, n_samples=10, output_folder="rbm_plot
 if __name__ == '__main__':
     datasets = load_data("mnist.pkl.gz")
 
-    train_set_x, train_set_y = datasets[0]
-    test_set_x, test_set_y = datasets[2]
+    train_set, _ = datasets[0][0:1000]
+    test_set, _ = datasets[2]
 
-    rbm = training(train_set_x, training_epochs=4)
-    generating(rbm, test_set_x, output_folder="test_generated")
+    rbm = training(train_set, training_epochs=4)
+    generating(rbm, test_set, output_folder="test_generated")
 
 

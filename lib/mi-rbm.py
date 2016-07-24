@@ -368,8 +368,7 @@ class RBM(object):
         g_G, updates = G(self.input)
         updates.update(updates_R)
 
-        gparams = [k1 * x - k2 * y for x, y in zip(g_G, g_R)]
-
+        gparams = [k1 * x + k2 * y for x, y in zip(g_G, g_R)]
         # Using SGD to constructs the update dictionary
         for gparam, param in zip(gparams, self.params):
             # make sure that the learning rate is of the right dtype
@@ -454,7 +453,8 @@ class RBM(object):
 
 
 def training(train_set, learning_rate=0.1, training_epochs=50,
-             mini_batch_M=10, hidden_sample_L=10, n_hidden=50):
+             mini_batch_M=10, hidden_sample_L=10, n_hidden=50,
+             K1=0.9, K2=0.1):
     """
     Demonstrate how to train and afterwards sample from it using Theano.
 
@@ -469,7 +469,7 @@ def training(train_set, learning_rate=0.1, training_epochs=50,
     :param hidden_sample_L: the number of hidden samples which are sampled
            according to one visible input.
     """
-
+    print "Parameters:\nlr:\t%f\nepochs:\t%d\nmini_batch:\t%d\nhidden_sample:\t%d\nn_hidden:\t%d\nk1:\t%f\nk2:\t%f\n" % (learning_rate, training_epochs, mini_batch_M, hidden_sample_L, n_hidden, K1, K2)
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set.get_value(borrow=True).shape[0] / mini_batch_M
 
@@ -496,7 +496,9 @@ def training(train_set, learning_rate=0.1, training_epochs=50,
         persistent=persistent_chain,
         k=15,
         hidden_sample_l=hidden_sample_L,
-        visible_sample_m=mini_batch_M
+        visible_sample_m=mini_batch_M,
+        k1=K1,
+        k2=K2
     )
 
     # Training RBM
@@ -616,10 +618,10 @@ def generating(rbm, test_set, n_chains=20, n_samples=10, output_folder="rbm_plot
 if __name__ == '__main__':
     datasets = load_data("mnist.pkl.gz")
 
-    train_set, _ = datasets[0]
+    train_set, _ = datasets[0][:1000]
     test_set, _ = datasets[2]
 
-    rbm = training(train_set, training_epochs=50, mini_batch_M=10, hidden_sample_L=10, n_hidden=50)
+    rbm = training(train_set, training_epochs=20, mini_batch_M=10, hidden_sample_L=10, n_hidden=50, K1=0, K2=1)
     generating(rbm, test_set, output_folder="test_generated")
 
 

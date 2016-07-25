@@ -368,7 +368,7 @@ class RBM(object):
         g_G, updates = G(self.input)
         updates.update(updates_R)
 
-        gparams = [k1 * x + k2 * y for x, y in zip(g_G, g_R)]
+        gparams = [k1 * x - k2 * y for x, y in zip(g_G, g_R)]
         # Using SGD to constructs the update dictionary
         for gparam, param in zip(gparams, self.params):
             # make sure that the learning rate is of the right dtype

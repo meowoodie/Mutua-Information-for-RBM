@@ -267,13 +267,20 @@ class RBM(object):
 
                     # Rl = map(lambda p1, p2: p1 + p2, part1, part2)
                     Rl = [x + y for x, y in zip(part1, part2)]
+
+                    mi_cost_xi = T.log(vn_mean).sum() + T.log(hl_mean).sum() + self.propup(v_input)
+
+                    Rl.append(mi_cost_xi)
                     return Rl
 
                 # Calculate the gradient of R_n(\theta) for one v_input, including:
                 # - For L times:
                 # - 1. Sample a h_sample with respect to current v_input
                 # - 2. Calculate the gradient of R_l(\theta) with respect to current h_sample
-                (Rls, updates) = theano.scan(
+                (
+                    Rls,
+                    updates
+                ) = theano.scan(
                     calculate_Rl,
                     outputs_info=None,
                     non_sequences=v_input,
@@ -291,12 +298,19 @@ class RBM(object):
                 # Warning: If do we need to calculate the total sum of the elements in the matrix? (.sum())
                 #          or just the sum of corresponding elements in different array(...)? (.sum(0))
                 # Rn = map(lambda x: x.sum(0) / hidden_sample_l, Rls)
+                mi_cost_x = Rls.pop().sum()
+
                 Rn = [x.sum(0) / hidden_sample_l for x in Rls]
+
+                Rn.append(mi_cost_x)
                 return Rn
 
             # Calculate the gradient of R_n(\theta) for each v_input
             # Annotation: self.input are a mini-batch of visible inputs which are sampled randomly from training dataset.
-            (Rns, updates) = theano.scan(
+            (
+                Rns,
+                updates
+            ) = theano.scan(
                 calculate_Rn,
                 outputs_info=None,
                 sequences=[input]
@@ -305,9 +319,11 @@ class RBM(object):
             # Warning: If do we need to calculate the total sum of the elements in the matrix? (.sum())
             #          or just the sum of corresponding elements in different array(...)? (.sum(0))
             # R = map(lambda x: x.sum(0) / visible_sample_m, Rns)
+            mi_cost = T.mean(Rns.pop())
+
             R = [x.sum(0) / visible_sample_m for x in Rns]
 
-            return R, updates
+            return [R, mi_cost], updates
 
         ##########################################
         # * Snippet-2:     Free Energy Cost     *
@@ -364,7 +380,7 @@ class RBM(object):
         # * Snippet-3:     Final Cost     *
         ##########################################
 
-        g_R, updates_R = R(self.input)
+        [g_R, mi_cost], updates_R = R(self.input)
         g_G, updates = G(self.input)
         updates.update(updates_R)
 
@@ -378,9 +394,9 @@ class RBM(object):
             )
 
         # TODO: need add a new function in order to change monitoring_cost to the real cost
-        monitoring_cost = self.get_pseudo_likelihood_cost(updates)
+        # monitoring_cost = self.get_pseudo_likelihood_cost(updates)
 
-        return monitoring_cost, updates
+        return mi_cost, updates
 
     def get_pseudo_likelihood_cost(self, updates):
         """Stochastic approximation to the pseudo-likelihood"""
@@ -410,6 +426,7 @@ class RBM(object):
         updates[bit_i_idx] = (bit_i_idx + 1) % self.n_visible
 
         return cost
+
 
     def get_reconstruction_cost(self, updates, pre_sigmoid_nv):
         """Approximation to the reconstruction error
@@ -469,7 +486,8 @@ def training(train_set, learning_rate=0.1, training_epochs=50,
     :param hidden_sample_L: the number of hidden samples which are sampled
            according to one visible input.
     """
-    print "Parameters:\nlr:\t%f\nepochs:\t%d\nmini_batch:\t%d\nhidden_sample:\t%d\nn_hidden:\t%d\nk1:\t%f\nk2:\t%f\n" % (learning_rate, training_epochs, mini_batch_M, hidden_sample_L, n_hidden, K1, K2)
+    print "Parameters:\nlr:\t%f\nepochs:\t%d\nmini_batch:\t%d\nhidden_sample:\t%d\nn_hidden:\t%d\nk1:\t%f\nk2:\t%f\n" \
+          % (learning_rate, training_epochs, mini_batch_M, hidden_sample_L, n_hidden, K1, K2)
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set.get_value(borrow=True).shape[0] / mini_batch_M
 

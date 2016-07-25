@@ -264,7 +264,6 @@ class RBM(object):
                                     disconnected_inputs='warn')
                     # Rl is the result that add corresponding elements in two gradient.
                     # Rl = log(p(v^n|h^l;\theta)) * grad(log(p(h^l|v^n;\theta))) + grad(log(p(v^n|h^l;\theta)))
-
                     # Rl = map(lambda p1, p2: p1 + p2, part1, part2)
                     Rl = [x + y for x, y in zip(part1, part2)]
 
@@ -643,10 +642,10 @@ def generating(rbm, test_set, n_chains=20, n_samples=10, output_folder="rbm_plot
 if __name__ == '__main__':
     datasets = load_data("mnist.pkl.gz")
 
-    train_set, _ = datasets[0][:1000]
+    train_set, _ = datasets[0]
     test_set, _ = datasets[2]
 
-    rbm = training(train_set, training_epochs=20, mini_batch_M=10, hidden_sample_L=10, n_hidden=50, K1=0, K2=1)
+    rbm = training(train_set, learning_rate=0.01, training_epochs=20, mini_batch_M=100, hidden_sample_L=10, n_hidden=100, K1=0, K2=1)
     generating(rbm, test_set, output_folder="test_generated")
 
 

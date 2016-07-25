@@ -268,7 +268,7 @@ class RBM(object):
                     # Rl = map(lambda p1, p2: p1 + p2, part1, part2)
                     Rl = [x + y for x, y in zip(part1, part2)]
 
-                    mi_cost_xi = T.log(vn_mean).sum() + T.log(hl_mean).sum() + T.log(self.propup(v_input)).sum()
+                    mi_cost_xi = T.log(vn_mean).sum()
 
                     Rl.append(mi_cost_xi)
                     return Rl
@@ -319,7 +319,7 @@ class RBM(object):
             # Warning: If do we need to calculate the total sum of the elements in the matrix? (.sum())
             #          or just the sum of corresponding elements in different array(...)? (.sum(0))
             # R = map(lambda x: x.sum(0) / visible_sample_m, Rns)
-            mi_cost = T.mean(Rns.pop())
+            mi_cost = Rns.pop().sum() / (hidden_sample_l * visible_sample_m)
 
             R = [x.sum(0) / visible_sample_m for x in Rns]
 

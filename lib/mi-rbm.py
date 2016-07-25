@@ -268,7 +268,7 @@ class RBM(object):
                     # Rl = map(lambda p1, p2: p1 + p2, part1, part2)
                     Rl = [x + y for x, y in zip(part1, part2)]
 
-                    mi_cost_xi = T.log(vn_mean).sum() + T.log(hl_mean).sum() + self.propup(v_input)
+                    mi_cost_xi = T.log(vn_mean).sum() + T.log(hl_mean).sum() + T.log(self.propup(v_input)).sum()
 
                     Rl.append(mi_cost_xi)
                     return Rl
@@ -323,7 +323,7 @@ class RBM(object):
 
             R = [x.sum(0) / visible_sample_m for x in Rns]
 
-            return [R, mi_cost], updates
+            return (R, mi_cost), updates
 
         ##########################################
         # * Snippet-2:     Free Energy Cost     *
@@ -379,12 +379,19 @@ class RBM(object):
         ##########################################
         # * Snippet-3:     Final Cost     *
         ##########################################
+        g_G = g_R = gparams = mi_cost = updates = updates_R = updates_G = None
+        if k1 > 0:
+            g_G, updates_G = G(self.input)
+            updates = updates_G
+            gparams = g_G
+        if k2 > 0:
+            (g_R, mi_cost), updates_R = R(self.input)
+            updates = updates_R
+            gparams = g_R
+        if k1 > 0 and k2 > 0:
+            updates = updates_G.update(updates_R)
+            gparams = [k1 * x - k2 * y for x, y in zip(g_G, g_R)]
 
-        [g_R, mi_cost], updates_R = R(self.input)
-        g_G, updates = G(self.input)
-        updates.update(updates_R)
-
-        gparams = [k1 * x - k2 * y for x, y in zip(g_G, g_R)]
         # Using SGD to constructs the update dictionary
         for gparam, param in zip(gparams, self.params):
             # make sure that the learning rate is of the right dtype

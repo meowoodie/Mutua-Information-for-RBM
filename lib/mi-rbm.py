@@ -378,23 +378,19 @@ class RBM(object):
         ##########################################
         # * Snippet-3:     Final Cost     *
         ##########################################
-        g_G = g_R = gparams = mi_cost = updates = updates_R = updates_G = None
-        if k1 > 0:
-            g_G, updates_G = G(self.input)
-            updates = updates_G
-            gparams = g_G
-        if k2 > 0:
-            (g_R, mi_cost), updates_R = R(self.input)
-            updates = updates_R
-            gparams = g_R
-        if k1 > 0 and k2 > 0:
-            updates = updates_G.update(updates_R)
-            gparams = [k1 * x - k2 * y for x, y in zip(g_G, g_R)]
+
+        g_G, updates_G = G(self.input)
+
+        (g_R, mi_cost), updates_R = R(self.input)
+
+        updates_G.update(updates_R)
+
+        gparams = [k1 * x - k2 * y for x, y in zip(g_G, g_R)]
 
         # Using SGD to constructs the update dictionary
         for gparam, param in zip(gparams, self.params):
             # make sure that the learning rate is of the right dtype
-            updates[param] = param - gparam * T.cast(
+            updates_G[param] = param - gparam * T.cast(
                 lr,
                 dtype=theano.config.floatX
             )
@@ -402,7 +398,7 @@ class RBM(object):
         # TODO: need add a new function in order to change monitoring_cost to the real cost
         # monitoring_cost = self.get_pseudo_likelihood_cost(updates)
 
-        return mi_cost, updates
+        return mi_cost, updates_G
 
     def get_pseudo_likelihood_cost(self, updates):
         """Stochastic approximation to the pseudo-likelihood"""
@@ -645,7 +641,7 @@ if __name__ == '__main__':
     train_set, _ = datasets[0]
     test_set, _ = datasets[2]
 
-    rbm = training(train_set, learning_rate=0.01, training_epochs=20, mini_batch_M=100, hidden_sample_L=10, n_hidden=100, K1=0, K2=1)
+    rbm = training(train_set, learning_rate=0.01, training_epochs=20, mini_batch_M=100, hidden_sample_L=10, n_hidden=100, K1=1, K2=0)
     generating(rbm, test_set, output_folder="test_generated")
 
 

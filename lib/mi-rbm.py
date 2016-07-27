@@ -641,7 +641,7 @@ if __name__ == '__main__':
     train_set, _ = datasets[0]
     test_set, _ = datasets[2]
 
-    rbm = training(train_set, learning_rate=0.01, training_epochs=20, mini_batch_M=100, hidden_sample_L=10, n_hidden=100, K1=1, K2=0)
+    rbm = training(train_set, learning_rate=0.01, training_epochs=20, mini_batch_M=100, hidden_sample_L=10, n_hidden=100, K1=0.9, K2=0.1)
     generating(rbm, test_set, output_folder="test_generated")
 
 

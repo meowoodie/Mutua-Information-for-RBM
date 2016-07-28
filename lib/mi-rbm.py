@@ -327,7 +327,7 @@ class RBM(object):
         ##########################################
         # * Snippet-2:     Free Energy Cost     *
         ##########################################
-        def G(input):
+        def E(input):
             # compute positive phase
             pre_sigmoid_ph, ph_mean, ph_sample = self.sample_h_given_v(input)
 
@@ -354,7 +354,7 @@ class RBM(object):
                     nh_means,
                     nh_samples
                 ],
-                updates_R
+                updates
             ) = theano.scan(
                 self.gibbs_hvh,
                 # the None are place holders, saying that
@@ -373,32 +373,94 @@ class RBM(object):
 
             G = T.grad(cost, self.params, consider_constant=[chain_end])
 
-            return G, updates_R
+            return G, updates
+
+        #############################################
+        # * Snippet-3: New Multual Information Cost *
+        #############################################
+        def N(input):
+            # Calculate the gradient of R_n(\theta) for one v_input
+            def calculate_Rn(v_input):
+
+                # Calculate the gradient of R_l(\theta)
+                # Equation:   R_n(\theta) = (1/L) * sum_{l=1}^{L} {R_l(\theta)}
+                # Annotation: L = hidden_sample_l
+                def calculate_Rl(v_input):
+                    # Sample a h_sample according to one v_input
+                    _, hl_mean, hl_sample = self.sample_h_given_v(v_input)
+                    # Calculate the probability of visible output according to h_sample
+                    _, vn_mean = self.propdown(hl_sample)
+
+                    Rl = (hl_mean * vn_mean).prod()
+
+                    return Rl
+
+                # Calculate the gradient of R_n(\theta) for one v_input, including:
+                # - For L times:
+                # - 1. Sample a h_sample with respect to current v_input
+                # - 2. Calculate the gradient of R_l(\theta) with respect to current h_sample
+                (
+                    Rls,
+                    updates
+                ) = theano.scan(
+                    calculate_Rl,
+                    outputs_info=None,
+                    non_sequences=v_input,
+                    n_steps=hidden_sample_l
+                )
+                # - 3. Sum all R_l(\theta)
+                #      Hint: the result of scan likes:
+                #            [array([[...],
+                #                    [...],
+                #                     ... ,
+                #                    [...]]),
+                #             array(... ...),
+                #             array(... ...)]
+                #             One array(...) represent the result of a partial derivative params.
+                Rn = T.log(Rls.sum())
+                return Rn
+
+            # Calculate the gradient of R_n(\theta) for each v_input
+            # Annotation: self.input are a mini-batch of visible inputs which are sampled randomly from training dataset.
+            (
+                Rns,
+                updates
+            ) = theano.scan(
+                calculate_Rn,
+                outputs_info=None,
+                sequences=[input]
+            )
+            # Get the gradient by summing all R_n(\theta)
+            R = Rns.sum() / (hidden_sample_l * visible_sample_m)
+
+            N = T.grad(R, self.params, consider_constant=[R], disconnected_inputs='warn')
+
+            return N, updates
 
         ##########################################
-        # * Snippet-3:     Final Cost     *
+        # * Snippet-4:     Final Cost     *
         ##########################################
 
-        g_G, updates_G = G(self.input)
+        g_N, updates_N = N(self.input)
 
-        (g_R, mi_cost), updates_R = R(self.input)
+        # (g_R, mi_cost), updates_R = R(self.input)
 
-        updates_G.update(updates_R)
+        # updates_G.update(updates_R)
 
-        gparams = [k1 * x - k2 * y for x, y in zip(g_G, g_R)]
+        # gparams = [k1 * x - k2 * y for x, y in zip(g_G, g_R)]
 
         # Using SGD to constructs the update dictionary
-        for gparam, param in zip(gparams, self.params):
+        for gparam, param in zip(g_N, self.params):
             # make sure that the learning rate is of the right dtype
-            updates_G[param] = param - gparam * T.cast(
+            updates_N[param] = param - gparam * T.cast(
                 lr,
                 dtype=theano.config.floatX
             )
 
         # TODO: need add a new function in order to change monitoring_cost to the real cost
-        # monitoring_cost = self.get_pseudo_likelihood_cost(updates)
+        monitoring_cost = self.get_pseudo_likelihood_cost(updates_N)
 
-        return mi_cost, updates_G
+        return monitoring_cost, updates_N
 
     def get_pseudo_likelihood_cost(self, updates):
         """Stochastic approximation to the pseudo-likelihood"""

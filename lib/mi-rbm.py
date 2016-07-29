@@ -207,8 +207,7 @@ class RBM(object):
     def get_cost_updates(self, lr=0.1,
                          persistent=None, k=1,
                          hidden_sample_l=1,
-                         visible_sample_m=1,
-                         k1=0.9, k2=0.1):
+                         visible_sample_m=1):
         """This functions implements one step of CD-k or PCD-k
 
         :param lr: learning rate used to train the RBM
@@ -378,70 +377,147 @@ class RBM(object):
         #############################################
         # * Snippet-3: New Multual Information Cost *
         #############################################
-        def N(input):
-            # Calculate the gradient of R_n(\theta) for one v_input
-            def calculate_Rn(v_input):
+        # Rl = T.exp(T.sum(v_input * T.log(vn_mean) + (1 - v_input) * T.log(1 - vn_mean))) * T.exp(T.sum(T.log(hl_mean)))
+        def N():
 
-                # Calculate the gradient of R_l(\theta)
-                # Equation:   R_n(\theta) = (1/L) * sum_{l=1}^{L} {R_l(\theta)}
-                # Annotation: L = hidden_sample_l
-                def calculate_Rl(v_input):
-                    # Sample a h_sample according to one v_input
-                    _, hl_mean, hl_sample = self.sample_h_given_v(v_input)
-                    # Calculate the probability of visible output according to h_sample
-                    _, vn_mean = self.propdown(hl_sample)
+            def Rn(v_input_n):
 
-                    Rl = (hl_mean * vn_mean).prod()
+                def part1():
 
-                    return Rl
+                    def Rm(v_input_m):
 
-                # Calculate the gradient of R_n(\theta) for one v_input, including:
-                # - For L times:
-                # - 1. Sample a h_sample with respect to current v_input
-                # - 2. Calculate the gradient of R_l(\theta) with respect to current h_sample
-                (
-                    Rls,
-                    updates
-                ) = theano.scan(
-                    calculate_Rl,
-                    outputs_info=None,
-                    non_sequences=v_input,
-                    n_steps=hidden_sample_l
-                )
-                # - 3. Sum all R_l(\theta)
-                #      Hint: the result of scan likes:
-                #            [array([[...],
-                #                    [...],
-                #                     ... ,
-                #                    [...]]),
-                #             array(... ...),
-                #             array(... ...)]
-                #             One array(...) represent the result of a partial derivative params.
-                Rn = T.log(Rls.sum())
-                return Rn
+                        def Rl(v_input_m):
+                            # Sample a h_sample according to one v_input
+                            _, hl_mean, hl_sample = self.sample_h_given_v(v_input_m)
+                            # Calculate the probability of visible output according to h_sample
+                            _, vn_mean = self.propdown(hl_sample)
 
-            # Calculate the gradient of R_n(\theta) for each v_input
-            # Annotation: self.input are a mini-batch of visible inputs which are sampled randomly from training dataset.
+                            gradient_factor = T.exp(T.sum(v_input_n * T.log(vn_mean) + (1 - v_input_n) * T.log(1 - vn_mean))) * \
+                                              T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean)))
+
+                            # g_part1 = [x * T.log(vn_mean).sum() for x in T.grad(
+                            #     T.log(hl_mean).sum(),
+                            #     self.params,
+                            #     disconnected_inputs='warn')]
+                            #
+                            # # - Part2.
+                            # g_part2 = T.grad((T.log(vn_mean).sum()),
+                            #                 self.params,
+                            #                 consider_constant=[vn_mean],
+                            #                 disconnected_inputs='warn')
+
+                            g_part2 = T.grad(T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean))),
+                                             self.params,
+                                             consider_constant=[hl_sample],
+                                             disconnected_inputs='warn')
+
+                            g_part1 = T.grad(T.exp(T.sum(v_input_n * T.log(self.propdown(hl_sample)[1]) + (1 - v_input_n) * T.log(1 - self.propdown(hl_sample)[1]))),
+                                             self.params,
+                                             consider_constant=[hl_sample],
+                                             disconnected_inputs='warn')
+
+
+
+                            R_l = [gradient_factor * (x + y) for x, y in zip(g_part1, g_part2)]
+
+                            return R_l
+
+                        (
+                            Rls,
+                            updates
+                        ) = theano.scan(
+                            Rl,
+                            outputs_info=None,
+                            non_sequences=v_input_m,
+                            n_steps=hidden_sample_l
+                        )
+
+                        R_m = [x.sum(0) / hidden_sample_l for x in Rls]
+
+                        return R_m
+
+                    (
+                        Rms,
+                        updates
+                    ) = theano.scan(
+                        Rm,
+                        outputs_info=None,
+                        sequences=[self.input]
+                    )
+
+                    part_1 = [x.sum(0) / visible_sample_m for x in Rms]
+
+                    return part_1
+
+                def part2():
+
+                    def Rm(v_input_m):
+
+                        def Rl(v_input_m):
+                            # Sample a h_sample according to one v_input
+                            _, hl_mean, hl_sample = self.sample_h_given_v(v_input_m)
+                            # Calculate the probability of visible output according to h_sample
+                            _, vn_mean = self.propdown(hl_sample)
+                            # R_l
+                            R_l = T.exp(T.sum(v_input_n * T.log(vn_mean) + (1 - v_input_n) * T.log(1 - vn_mean))) * \
+                                  T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean)))
+                            return R_l
+
+                        (
+                            Rls,
+                            updates
+                        ) = theano.scan(
+                            Rl,
+                            outputs_info=None,
+                            non_sequences=v_input_m,
+                            n_steps=hidden_sample_l
+                        )
+
+                        R_m = Rls.sum()
+
+                        return R_m
+
+                    (
+                        Rms,
+                        updates
+                    ) = theano.scan(
+                        Rm,
+                        outputs_info=None,
+                        sequences=[self.input]
+                    )
+
+                    part_2 = Rms.sum()
+
+                    return part_2
+
+                part_1 = part1()
+
+                part_2 = part2()
+
+                # updates_1.update(updates_2)
+
+                R_n = [x / part_2 for x in part_1]
+
+                return R_n
+
             (
                 Rns,
                 updates
             ) = theano.scan(
-                calculate_Rn,
+                Rn,
                 outputs_info=None,
-                sequences=[input]
+                sequences=[self.input]
             )
-            # Get the gradient by summing all R_n(\theta)
-            R = Rns.sum() / (hidden_sample_l * visible_sample_m)
 
-            N = T.grad(R, self.params, consider_constant=[R], disconnected_inputs='warn')
+            R = [x.sum(0) / visible_sample_m for x in Rns]
 
-            return N, updates
+            return R, updates
 
         ##########################################
         # * Snippet-4:     Final Cost     *
         ##########################################
 
-        g_N, updates_N = N(self.input)
+        g_N, updates = N()
 
         # (g_R, mi_cost), updates_R = R(self.input)
 
@@ -452,15 +528,15 @@ class RBM(object):
         # Using SGD to constructs the update dictionary
         for gparam, param in zip(g_N, self.params):
             # make sure that the learning rate is of the right dtype
-            updates_N[param] = param + gparam * T.cast(
+            updates[param] = param - gparam * T.cast(
                 lr,
                 dtype=theano.config.floatX
             )
 
         # TODO: need add a new function in order to change monitoring_cost to the real cost
-        monitoring_cost = self.get_pseudo_likelihood_cost(updates_N)
+        monitoring_cost = self.get_pseudo_likelihood_cost(updates)
 
-        return monitoring_cost, updates_N
+        return monitoring_cost, updates
 
     def get_pseudo_likelihood_cost(self, updates):
         """Stochastic approximation to the pseudo-likelihood"""
@@ -578,9 +654,7 @@ def training(train_set, learning_rate=0.1, training_epochs=50,
         persistent=persistent_chain,
         k=15,
         hidden_sample_l=hidden_sample_L,
-        visible_sample_m=mini_batch_M,
-        k1=K1,
-        k2=K2
+        visible_sample_m=mini_batch_M
     )
 
     # Training RBM
@@ -703,7 +777,7 @@ if __name__ == '__main__':
     train_set, _ = datasets[0]
     test_set, _ = datasets[2]
 
-    rbm = training(train_set, learning_rate=0.01, training_epochs=20, mini_batch_M=100, hidden_sample_L=10, n_hidden=100, K1=0.9, K2=0.1)
+    rbm = training(train_set, learning_rate=0.01, training_epochs=20, mini_batch_M=100, hidden_sample_L=10, n_hidden=100)
     generating(rbm, test_set, output_folder="test_generated")
 
 

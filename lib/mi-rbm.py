@@ -311,7 +311,7 @@ class RBM(object):
             ) = theano.scan(
                 calculate_Rn,
                 outputs_info=None,
-                sequences=[input]
+                sequences=input
             )
             # Get the gradient by summing all R_n(\theta)
             # Warning: If do we need to calculate the total sum of the elements in the matrix? (.sum())
@@ -378,125 +378,69 @@ class RBM(object):
         # * Snippet-3: New Multual Information Cost *
         #############################################
         # Rl = T.exp(T.sum(v_input * T.log(vn_mean) + (1 - v_input) * T.log(1 - vn_mean))) * T.exp(T.sum(T.log(hl_mean)))
-        def N():
+        def N(input):
 
-            def Rn(v_input_n):
+            def Rn(v_input_n, input):
 
-                def part1():
+                def Rm(v_input_m, v_input_n):
 
-                    def Rm(v_input_m):
+                    def Rl(v_input_m, v_input_n):
+                        # Sample a h_sample according to one v_input
+                        _, hl_mean, hl_sample = self.sample_h_given_v(v_input_m)
+                        # Calculate the probability of visible output according to h_sample
+                        _, vn_mean = self.propdown(hl_sample)
 
-                        def Rl(v_input_m):
-                            # Sample a h_sample according to one v_input
-                            _, hl_mean, hl_sample = self.sample_h_given_v(v_input_m)
-                            # Calculate the probability of visible output according to h_sample
-                            _, vn_mean = self.propdown(hl_sample)
+                        gradient_factor = T.exp(T.sum(v_input_n * T.log(vn_mean) + (1 - v_input_n) * T.log(1 - vn_mean))) * \
+                                          T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean)))
 
-                            gradient_factor = T.exp(T.sum(v_input_n * T.log(vn_mean) + (1 - v_input_n) * T.log(1 - vn_mean))) * \
-                                              T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean)))
+                        g_part2 = T.grad(T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean))),
+                                         self.params,
+                                         consider_constant=[hl_sample],
+                                         disconnected_inputs='warn')
 
-                            # g_part1 = [x * T.log(vn_mean).sum() for x in T.grad(
-                            #     T.log(hl_mean).sum(),
-                            #     self.params,
-                            #     disconnected_inputs='warn')]
-                            #
-                            # # - Part2.
-                            # g_part2 = T.grad((T.log(vn_mean).sum()),
-                            #                 self.params,
-                            #                 consider_constant=[vn_mean],
-                            #                 disconnected_inputs='warn')
+                        g_part1 = T.grad(T.exp(T.sum(v_input_n * T.log(self.propdown(hl_sample)[1]) + (1 - v_input_n) * T.log(1 - self.propdown(hl_sample)[1]))),
+                                         self.params,
+                                         consider_constant=[hl_sample],
+                                         disconnected_inputs='warn')
 
-                            g_part2 = T.grad(T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean))),
-                                             self.params,
-                                             consider_constant=[hl_sample],
-                                             disconnected_inputs='warn')
+                        R_l = [gradient_factor * (x + y) for x, y in zip(g_part1, g_part2)]
 
-                            g_part1 = T.grad(T.exp(T.sum(v_input_n * T.log(self.propdown(hl_sample)[1]) + (1 - v_input_n) * T.log(1 - self.propdown(hl_sample)[1]))),
-                                             self.params,
-                                             consider_constant=[hl_sample],
-                                             disconnected_inputs='warn')
+                        R_l.append(gradient_factor)
 
-
-
-                            R_l = [gradient_factor * (x + y) for x, y in zip(g_part1, g_part2)]
-
-                            return R_l
-
-                        (
-                            Rls,
-                            updates
-                        ) = theano.scan(
-                            Rl,
-                            outputs_info=None,
-                            non_sequences=v_input_m,
-                            n_steps=hidden_sample_l
-                        )
-
-                        R_m = [x.sum(0) / hidden_sample_l for x in Rls]
-
-                        return R_m
+                        return R_l
 
                     (
-                        Rms,
+                        Rls,
                         updates
                     ) = theano.scan(
-                        Rm,
+                        Rl,
                         outputs_info=None,
-                        sequences=[self.input]
+                        non_sequences=[v_input_m, v_input_n],
+                        n_steps=hidden_sample_l
                     )
 
-                    part_1 = [x.sum(0) / visible_sample_m for x in Rms]
+                    # Including the numerator and denominator of the formula
+                    R_m = [x.sum(0) / hidden_sample_l for x in Rls]
 
-                    return part_1
+                    return R_m
 
-                def part2():
+                (
+                    Rms,
+                    updates
+                ) = theano.scan(
+                    Rm,
+                    outputs_info=None,
+                    non_sequences=v_input_n,
+                    sequences=input
+                )
 
-                    def Rm(v_input_m):
+                numerator_denominators = [x.sum(0) / visible_sample_m for x in Rms]
 
-                        def Rl(v_input_m):
-                            # Sample a h_sample according to one v_input
-                            _, hl_mean, hl_sample = self.sample_h_given_v(v_input_m)
-                            # Calculate the probability of visible output according to h_sample
-                            _, vn_mean = self.propdown(hl_sample)
-                            # R_l
-                            R_l = T.exp(T.sum(v_input_n * T.log(vn_mean) + (1 - v_input_n) * T.log(1 - vn_mean))) * \
-                                  T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean)))
-                            return R_l
+                numerator = numerator_denominators.pop()
 
-                        (
-                            Rls,
-                            updates
-                        ) = theano.scan(
-                            Rl,
-                            outputs_info=None,
-                            non_sequences=v_input_m,
-                            n_steps=hidden_sample_l
-                        )
+                denominators = numerator_denominators
 
-                        R_m = Rls.sum()
-
-                        return R_m
-
-                    (
-                        Rms,
-                        updates
-                    ) = theano.scan(
-                        Rm,
-                        outputs_info=None,
-                        sequences=[self.input]
-                    )
-
-                    part_2 = Rms.sum()
-
-                    return part_2
-
-                part_1 = part1()
-
-                part_2 = part2()
-
-                # updates_1.update(updates_2)
-
-                R_n = [x / part_2 for x in part_1]
+                R_n = [x / numerator for x in denominators]
 
                 return R_n
 
@@ -506,7 +450,8 @@ class RBM(object):
             ) = theano.scan(
                 Rn,
                 outputs_info=None,
-                sequences=[self.input]
+                non_sequences=input,
+                sequences=input
             )
 
             R = [x.sum(0) / visible_sample_m for x in Rns]
@@ -517,13 +462,7 @@ class RBM(object):
         # * Snippet-4:     Final Cost     *
         ##########################################
 
-        g_N, updates = N()
-
-        # (g_R, mi_cost), updates_R = R(self.input)
-
-        # updates_G.update(updates_R)
-
-        # gparams = [k1 * x - k2 * y for x, y in zip(g_G, g_R)]
+        g_N, updates = N(self.input)
 
         # Using SGD to constructs the update dictionary
         for gparam, param in zip(g_N, self.params):

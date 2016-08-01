@@ -306,7 +306,7 @@ class RBM(object):
         # Using SGD to constructs the update dictionary
         for gparam, param in zip(gradient, self.params):
             # make sure that the learning rate is of the right dtype
-            updates[param] = param - gparam * T.cast(
+            updates[param] = param + gparam * T.cast(
                 lr,
                 dtype=theano.config.floatX
             )

@@ -30,7 +30,8 @@ class RBM(object):
     """Restricted Boltzmann Machine (RBM)  """
     def __init__(
         self,
-        input=None,
+        input_n=None,
+        input_m=None,
         n_visible=784,
         n_hidden=500,
         W=None,
@@ -113,9 +114,11 @@ class RBM(object):
             )
 
         # initialize input layer for standalone RBM or layer0 of DBN
-        self.input = input
+        self.input_n = input_n
+        self.input_m = input_m
         if not input:
-            self.input = T.matrix('input')
+            self.input_n = T.matrix('input_n')
+            self.input_m = T.matrix('input_m')
 
         self.W = W
         self.hbias = hbias
@@ -227,163 +230,83 @@ class RBM(object):
                     grad(log(p(v^n|h^l;\theta)))
                     }
         """
-        ##########################################
-        # * Snippet-1: Multual Information Cost *
-        ##########################################
-        def R(input):
-            # Calculate the gradient of R_n(\theta) for one v_input
-            def calculate_Rn(v_input):
 
-                # Calculate the gradient of R_l(\theta)
-                # Equation:   R_n(\theta) = (1/L) * sum_{l=1}^{L} {R_l(\theta)}
-                # Annotation: L = hidden_sample_l
-                def calculate_Rl(v_input):
+        def Rn(v_input_n):
+
+            def Rm(v_input_m, v_input_n):
+
+                def Rl(v_input_m, v_input_n):
                     # Sample a h_sample according to one v_input
-                    _, hl_mean, hl_sample = self.sample_h_given_v(v_input)
+                    _, hl_mean, hl_sample = self.sample_h_given_v(v_input_m)
                     # Calculate the probability of visible output according to h_sample
                     _, vn_mean = self.propdown(hl_sample)
-                    # - Part1.
-                    #   Desc: Multiply each element in grad with T.log(vn_mean).sum()
-                    #   Hint: [array(...), array(...), array(...)] = T.grad(..., self.params)
-                    #         The number of elements in gradient is the number of params which are partial derivation.
 
-                    # part1 = map(lambda x: x * T.log(vn_mean).sum(),
-                    #             T.grad(T.log(hl_mean).sum(),
-                    #                    self.params,
-                    #                    disconnected_inputs='warn'))
-                    part1 = [x * T.log(vn_mean).sum() for x in T.grad(
-                        T.log(hl_mean).sum(),
-                        self.params,
-                        disconnected_inputs='warn')]
+                    gradient_factor = T.exp(T.sum(v_input_n * T.log(vn_mean) + (1 - v_input_n) * T.log(1 - vn_mean))) * \
+                                      T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean)))
 
-                    # - Part2.
-                    part2 = T.grad((T.log(self.propdown(hl_sample)[1]).sum()),
-                                    self.params,
-                                    consider_constant=[hl_sample],
-                                    disconnected_inputs='warn')
-                    # Rl is the result that add corresponding elements in two gradient.
-                    # Rl = log(p(v^n|h^l;\theta)) * grad(log(p(h^l|v^n;\theta))) + grad(log(p(v^n|h^l;\theta)))
-                    # Rl = map(lambda p1, p2: p1 + p2, part1, part2)
-                    Rl = [x + y for x, y in zip(part1, part2)]
+                    g_part2 = T.grad(T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean))),
+                                     self.params,
+                                     consider_constant=[hl_sample],
+                                     disconnected_inputs='warn')
 
-                    mi_cost_xi = T.log(vn_mean).sum()
+                    g_part1 = T.grad(T.exp(T.sum(v_input_n * T.log(self.propdown(hl_sample)[1]) + (1 - v_input_n) * T.log(1 - self.propdown(hl_sample)[1]))),
+                                     self.params,
+                                     consider_constant=[hl_sample],
+                                     disconnected_inputs='warn')
 
-                    Rl.append(mi_cost_xi)
-                    return Rl
+                    R_l = [gradient_factor * (x + y) for x, y in zip(g_part1, g_part2)]
 
-                # Calculate the gradient of R_n(\theta) for one v_input, including:
-                # - For L times:
-                # - 1. Sample a h_sample with respect to current v_input
-                # - 2. Calculate the gradient of R_l(\theta) with respect to current h_sample
+                    R_l.append(gradient_factor)
+
+                    return R_l
+
                 (
                     Rls,
                     updates
                 ) = theano.scan(
-                    calculate_Rl,
-                    outputs_info=None,
-                    non_sequences=v_input,
+                    Rl,
+                    non_sequences=[v_input_m, v_input_n],
                     n_steps=hidden_sample_l
                 )
-                # - 3. Sum all R_l(\theta)
-                #      Hint: the result of scan likes:
-                #            [array([[...],
-                #                    [...],
-                #                     ... ,
-                #                    [...]]),
-                #             array(... ...),
-                #             array(... ...)]
-                #             One array(...) represent the result of a partial derivative params.
-                # Warning: If do we need to calculate the total sum of the elements in the matrix? (.sum())
-                #          or just the sum of corresponding elements in different array(...)? (.sum(0))
-                # Rn = map(lambda x: x.sum(0) / hidden_sample_l, Rls)
-                mi_cost_x = Rls.pop().sum()
 
-                Rn = [x.sum(0) / hidden_sample_l for x in Rls]
+                # Including the numerator and denominator of the formula
+                R_m = [x.sum(0) / hidden_sample_l for x in Rls]
 
-                Rn.append(mi_cost_x)
-                return Rn, updates
+                return R_m, updates
 
-            # Calculate the gradient of R_n(\theta) for each v_input
-            # Annotation: self.input are a mini-batch of visible inputs which are sampled randomly from training dataset.
             (
-                Rns,
+                Rms,
                 updates
             ) = theano.scan(
-                calculate_Rn,
-                outputs_info=None,
-                sequences=input
+                Rm,
+                sequences=self.input_m,
+                non_sequences=v_input_n
             )
-            # Get the gradient by summing all R_n(\theta)
-            # Warning: If do we need to calculate the total sum of the elements in the matrix? (.sum())
-            #          or just the sum of corresponding elements in different array(...)? (.sum(0))
-            # R = map(lambda x: x.sum(0) / visible_sample_m, Rns)
-            mi_cost = Rns.pop().sum() / (hidden_sample_l * visible_sample_m)
 
-            R = [x.sum(0) / visible_sample_m for x in Rns]
+            numerator_denominators = [x.sum(0) / visible_sample_m for x in Rms]
 
-            return (R, mi_cost), updates
+            numerator = numerator_denominators.pop()
 
-        ##########################################
-        # * Snippet-2:     Free Energy Cost     *
-        ##########################################
-        def E(input):
-            # compute positive phase
-            pre_sigmoid_ph, ph_mean, ph_sample = self.sample_h_given_v(input)
+            denominators = numerator_denominators
 
-            # decide how to initialize persistent chain:
-            # for CD, we use the newly generate hidden sample
-            # for PCD, we initialize from the old state of the chain
-            if persistent is None:
-                chain_start = ph_sample
-            else:
-                chain_start = persistent
-            # end-snippet-2
-            # perform actual negative phase
-            # in order to implement CD-k/PCD-k we need to scan over the
-            # function that implements one gibbs step k times.
-            # Read Theano tutorial on scan for more information :
-            # http://deeplearning.net/software/theano/library/scan.html
-            # the scan will return the entire Gibbs chain
-            (
-                [
-                    pre_sigmoid_nvs,
-                    nv_means,
-                    nv_samples,
-                    pre_sigmoid_nhs,
-                    nh_means,
-                    nh_samples
-                ],
-                updates
-            ) = theano.scan(
-                self.gibbs_hvh,
-                # the None are place holders, saying that
-                # chain_start is the initial state corresponding to the
-                # 6th output
-                outputs_info=[None, None, None, None, None, chain_start],
-                n_steps=k
-            )
-            # start-snippet-3
-            # determine gradients on RBM parameters
-            # note that we only need the sample at the end of the chain
-            chain_end = nv_samples[-1]
+            R_n = [x / numerator for x in denominators]
 
-            cost = T.mean(self.free_energy(input)) - T.mean(
-                self.free_energy(chain_end))
+            return R_n, updates
 
-            G = T.grad(cost, self.params, consider_constant=[chain_end])
+        (
+            Rns,
+            updates
+        ) = theano.scan(
+            Rn,
+            sequences=self.input_n
+        )
 
-            return G, updates
-
-        ##########################################
-        # * Snippet-3:     Final Cost     *
-        ##########################################
-
-        (g_R, mi_cost), updates = R(self.input)
+        gradient = [x.sum(0) / visible_sample_m for x in Rns]
 
         # Using SGD to constructs the update dictionary
-        for gparam, param in zip(g_R, self.params):
+        for gparam, param in zip(gradient, self.params):
             # make sure that the learning rate is of the right dtype
-            updates[param] = param + gparam * T.cast(
+            updates[param] = param - gparam * T.cast(
                 lr,
                 dtype=theano.config.floatX
             )
@@ -400,7 +323,7 @@ class RBM(object):
         bit_i_idx = theano.shared(value=0, name='bit_i_idx')
 
         # binarize the input image by rounding to nearest integer
-        xi = T.round(self.input)
+        xi = T.round(self.input_n)
 
         # calculate free energy for the given bit configuration
         fe_xi = self.free_energy(xi)
@@ -455,8 +378,8 @@ class RBM(object):
 
         cross_entropy = T.mean(
             T.sum(
-                self.input * T.log(T.nnet.sigmoid(pre_sigmoid_nv)) +
-                (1 - self.input) * T.log(1 - T.nnet.sigmoid(pre_sigmoid_nv)),
+                self.input_n * T.log(T.nnet.sigmoid(pre_sigmoid_nv)) +
+                (1 - self.input_n) * T.log(1 - T.nnet.sigmoid(pre_sigmoid_nv)),
                 axis=1
             )
         )
@@ -465,8 +388,7 @@ class RBM(object):
 
 
 def training(train_set, learning_rate=0.1, training_epochs=50,
-             mini_batch_M=10, hidden_sample_L=10, n_hidden=50,
-             K1=0.9, K2=0.1):
+             mini_batch_M=10, hidden_sample_L=10, n_hidden=50):
     """
     Demonstrate how to train and afterwards sample from it using Theano.
 
@@ -481,14 +403,15 @@ def training(train_set, learning_rate=0.1, training_epochs=50,
     :param hidden_sample_L: the number of hidden samples which are sampled
            according to one visible input.
     """
-    print "Parameters:\nlr:\t%f\nepochs:\t%d\nmini_batch:\t%d\nhidden_sample:\t%d\nn_hidden:\t%d\nk1:\t%f\nk2:\t%f\n" \
-          % (learning_rate, training_epochs, mini_batch_M, hidden_sample_L, n_hidden, K1, K2)
+    print "Parameters:\nlr:\t%f\nepochs:\t%d\nmini_batch:\t%d\nhidden_sample:\t%d\nn_hidden:\t%d\n" \
+          % (learning_rate, training_epochs, mini_batch_M, hidden_sample_L, n_hidden)
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set.get_value(borrow=True).shape[0] / mini_batch_M
 
     # allocate symbolic variables for the data
     index = T.lscalar()    # index to a [mini]batch
     x = T.matrix('x')  # the data is presented as rasterized images
+    y = T.matrix('y')  # the data is presented as rasterized images
 
     rng = numpy.random.RandomState(123)
     theano_rng = RandomStreams(rng.randint(2 ** 30))
@@ -500,7 +423,7 @@ def training(train_set, learning_rate=0.1, training_epochs=50,
                                      borrow=True)
 
     # construct the RBM class
-    rbm = RBM(input=x, n_visible=28 * 28,
+    rbm = RBM(input_n=x, input_m=y, n_visible=28 * 28,
               n_hidden=n_hidden, numpy_rng=rng, theano_rng=theano_rng)
 
     # get the cost and the gradient by using MI
@@ -520,7 +443,8 @@ def training(train_set, learning_rate=0.1, training_epochs=50,
         cost,
         updates=updates,
         givens={
-            x: train_set[index * mini_batch_M: (index + 1) * mini_batch_M]
+            x: train_set[index * mini_batch_M: (index + 1) * mini_batch_M],
+            y: train_set[index * mini_batch_M: (index + 1) * mini_batch_M]
         },
         name='train_rbm'
     )

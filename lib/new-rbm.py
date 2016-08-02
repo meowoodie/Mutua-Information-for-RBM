@@ -208,7 +208,7 @@ class RBM(object):
                 pre_sigmoid_v1, v1_mean, v1_sample]
 
     def get_cost_updates(self, lr=0.1,
-                         persistent=None, k=1,
+                         # persistent=None, k=1,
                          hidden_sample_l=1,
                          visible_sample_m=1):
         """This functions implements one step of CD-k or PCD-k
@@ -429,8 +429,8 @@ def training(train_set, learning_rate=0.1, training_epochs=50,
     # get the cost and the gradient by using MI
     cost, updates = rbm.get_cost_updates(
         lr=learning_rate,
-        persistent=persistent_chain,
-        k=15,
+        # persistent=persistent_chain,
+        # k=15,
         hidden_sample_l=hidden_sample_L,
         visible_sample_m=mini_batch_M
     )
@@ -553,10 +553,10 @@ def generating(rbm, test_set, n_chains=20, n_samples=10, output_folder="rbm_plot
 if __name__ == '__main__':
     datasets = load_data("mnist.pkl.gz")
 
-    train_set, _ = datasets[0]
+    train_set, _ = datasets[0][:1000]
     test_set, _ = datasets[2]
 
-    rbm = training(train_set, learning_rate=0.01, training_epochs=20, mini_batch_M=100, hidden_sample_L=10, n_hidden=100)
+    rbm = training(train_set, learning_rate=0.01, training_epochs=20, mini_batch_M=5, hidden_sample_L=1, n_hidden=10)
     generating(rbm, test_set, output_folder="test_generated")
 
 

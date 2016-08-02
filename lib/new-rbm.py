@@ -230,6 +230,7 @@ class RBM(object):
                     grad(log(p(v^n|h^l;\theta)))
                     }
         """
+        INF = 1e-20
 
         def Rn(v_input_n):
 
@@ -241,15 +242,15 @@ class RBM(object):
                     # Calculate the probability of visible output according to h_sample
                     _, vn_mean = self.propdown(hl_sample)
 
-                    gradient_factor = T.exp(T.sum(v_input_n * T.log(vn_mean) + (1 - v_input_n) * T.log(1 - vn_mean))) * \
-                                      T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean)))
+                    gradient_factor = T.exp(T.sum(v_input_n * T.log(vn_mean + INF) + (1 - v_input_n) * T.log(1 - vn_mean + INF))) * \
+                                      T.exp(T.sum(hl_sample * T.log(hl_mean + INF) + (1 - hl_sample) * T.log(1 - hl_mean + INF)))
 
-                    g_part2 = T.grad(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean)),
+                    g_part2 = T.grad(T.sum(hl_sample * T.log(hl_mean + INF) + (1 - hl_sample) * T.log(1 - hl_mean + INF)),
                                      self.params,
                                      consider_constant=[hl_sample],
                                      disconnected_inputs='warn')
 
-                    g_part1 = T.grad(T.sum(v_input_n * T.log(self.propdown(hl_sample)[1]) + (1 - v_input_n) * T.log(1 - self.propdown(hl_sample)[1])),
+                    g_part1 = T.grad(T.sum(v_input_n * T.log(self.propdown(hl_sample)[1] + INF) + (1 - v_input_n) * T.log(1 - self.propdown(hl_sample)[1] + INF)),
                                      self.params,
                                      consider_constant=[hl_sample],
                                      disconnected_inputs='warn')

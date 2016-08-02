@@ -244,12 +244,12 @@ class RBM(object):
                     gradient_factor = T.exp(T.sum(v_input_n * T.log(vn_mean) + (1 - v_input_n) * T.log(1 - vn_mean))) * \
                                       T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean)))
 
-                    g_part2 = T.grad(T.exp(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean))),
+                    g_part2 = T.grad(T.sum(hl_sample * T.log(hl_mean) + (1 - hl_sample) * T.log(1 - hl_mean)),
                                      self.params,
                                      consider_constant=[hl_sample],
                                      disconnected_inputs='warn')
 
-                    g_part1 = T.grad(T.exp(T.sum(v_input_n * T.log(self.propdown(hl_sample)[1]) + (1 - v_input_n) * T.log(1 - self.propdown(hl_sample)[1]))),
+                    g_part1 = T.grad(T.sum(v_input_n * T.log(self.propdown(hl_sample)[1]) + (1 - v_input_n) * T.log(1 - self.propdown(hl_sample)[1])),
                                      self.params,
                                      consider_constant=[hl_sample],
                                      disconnected_inputs='warn')
@@ -285,11 +285,11 @@ class RBM(object):
 
             numerator_denominators = [x.sum(0) / visible_sample_m for x in Rms]
 
-            numerator = numerator_denominators.pop()
+            denominators = numerator_denominators.pop()
 
-            denominators = numerator_denominators
+            numerator = numerator_denominators
 
-            R_n = [x / numerator for x in denominators]
+            R_n = [x / denominators for x in numerator]
 
             return R_n, updates
 
